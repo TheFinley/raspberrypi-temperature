@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
 import DashboardLayout from './layouts/DashboardLayout.jsx'
 import DashboardHeader from './components/DashboardHeader.jsx'
 import MetricsGrid from './components/MetricsGrid.jsx'
 import MetricCard from './components/MetricCard.jsx'
 import AnalyticsContainer from './components/AnalyticsContainer.jsx'
 import TelemetryChart from './components/TelemetryChart.jsx'
+import { useTelemetry } from './hooks/useTelemetry.js'
 
 function getTempStatus(temp) {
   if (temp > 30) return 'critical'
@@ -13,6 +13,7 @@ function getTempStatus(temp) {
 }
 
 function timeSince(dateStr) {
+  if (!dateStr) return '—'
   const d = new Date(dateStr.replace(/\//g, '-').replace(' ', 'T'))
   const mins = Math.round((Date.now() - d) / 60000)
   if (mins < 1) return 'just now'
@@ -21,23 +22,28 @@ function timeSince(dateStr) {
 }
 
 function App() {
-  const [data, setData] = useState(null)
-  const [status, setStatus] = useState('loading')
+  const {
+    currentTemp,
+    lastUpdated,
+    chartLabels,
+    chartValues,
+    syncStatus,
+    errorMessage,
+  } = useTelemetry()
 
-  useEffect(() => {
-    fetch(`/mock_recent_temp.json?t=${Date.now()}`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then(json => { setData(json); setStatus('ok') })
-      .catch(() => setStatus('error'))
-  }, [])
+  const isFirstLoad = currentTemp === null
 
-  if (status === 'loading') return <div className="app-loading">Loading telemetry…</div>
-  if (status === 'error')   return <div className="app-error">Failed to load telemetry data.</div>
+  if (isFirstLoad && syncStatus === 'fetching') {
+    return <div className="app-loading">Loading telemetry…</div>
+  }
+  if (isFirstLoad && syncStatus === 'error') {
+    return <div className="app-error">Failed to load telemetry — {errorMessage}</div>
+  }
 
-  const [datePart, timePart] = data.last_updated.split(' ')
+  const [datePart, timePart] = (lastUpdated || '').split(' ')
+  const syncCardStatus = syncStatus === 'error' ? 'critical'
+                       : syncStatus === 'fetching' ? 'warning'
+                       : 'nominal'
 
   return (
     <DashboardLayout>
@@ -45,21 +51,21 @@ function App() {
       <MetricsGrid>
         <MetricCard
           title="Ambient Temperature"
-          value={data.current_temp.toFixed(2)}
+          value={currentTemp?.toFixed(2)}
           unit="°C"
-          subtitle={`Last recorded ${timeSince(data.last_updated)}`}
-          status={getTempStatus(data.current_temp)}
+          subtitle={`Last recorded ${timeSince(lastUpdated)}`}
+          status={getTempStatus(currentTemp)}
         />
         <MetricCard
           title="Last Sync"
           value={timePart}
           unit=""
           subtitle={datePart}
-          status="nominal"
+          status={syncCardStatus}
         />
       </MetricsGrid>
       <AnalyticsContainer>
-        <TelemetryChart labels={data.labels} dataPoints={data.values} />
+        <TelemetryChart labels={chartLabels} dataPoints={chartValues} />
       </AnalyticsContainer>
     </DashboardLayout>
   )
