@@ -16,10 +16,13 @@ import requests
 import pandas as pd
 
 GITHUB_TOKEN   = os.environ.get('GITHUB_TOKEN')
-GITHUB_REPO    = 'TheFinley/raspberrypi-tempurature'
+GITHUB_REPO    = 'TheFinley/raspberrypi-temperature'
 GITHUB_BRANCH  = 'main'
 GITHUB_FILE    = 'data/recent_temp.json'
-LOG_PATTERN    = '/home/pi/readtemp/tempurature.log*'
+# Active log + any same-folder rotations, AND logrotate's olddir (rotated/).
+# Without rotated/ the chart empties after every rotation.
+LOG_PATTERNS   = ['/home/pi/readtemp/temperature.log*',
+                  '/home/pi/readtemp/rotated/temperature.log*']
 
 if not GITHUB_TOKEN:
     print('[ERROR] GITHUB_TOKEN environment variable not set')
@@ -28,7 +31,8 @@ if not GITHUB_TOKEN:
 
 def read_logs():
     frames = []
-    for path in sorted(glob.glob(LOG_PATTERN), reverse=True):
+    paths = {p for pattern in LOG_PATTERNS for p in glob.glob(pattern)}
+    for path in sorted(paths, reverse=True):
         try:
             df = pd.read_csv(path, names=['date', 'temp'], header=None)
             frames.append(df)
@@ -57,9 +61,11 @@ def downsample(df):
     return labels, values
 
 
-def build_payload(labels, values):
+def build_payload(labels, values, current_temp):
     return json.dumps({
-        'current_temp': values[-1] if values else None,
+        # Latest raw reading, NOT the last hourly average (values[-1]), which
+        # is only a partial-hour mean and lags the real temperature.
+        'current_temp': current_temp,
         'last_updated': datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S'),
         'labels':       labels,
         'values':       values,
@@ -106,9 +112,10 @@ def main():
     try:
         df             = read_logs()
         labels, values = downsample(df)
-        content        = build_payload(labels, values)
+        current_temp   = round(float(df['temp'].iloc[-1]), 2)
+        content        = build_payload(labels, values, current_temp)
         commit_sha     = push_to_github(content)
-        print(f'[{ts}] Pushed → commit {commit_sha[:7]}  (current: {values[-1]}°C)')
+        print(f'[{ts}] Pushed → commit {commit_sha[:7]}  (current: {current_temp}°C)')
     except Exception as e:
         print(f'[{ts}] FAILED: {e}')
         sys.exit(1)
