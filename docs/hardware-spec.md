@@ -75,7 +75,7 @@ combined['temp'].interpolate(inplace=True)
 
 | Path | Purpose |
 |---|---|
-| /home/pi/readtemp/temperature.log | DS18B20 ambient temp log (CSV, 1-min cadence) |
+| /home/pi/readtemp/temperature.log | DS18B20 ambient temp log (CSV, 2-min cadence) |
 | /home/pi/readtemp/temperature.png | Ambient temp chart (regenerated every 5 min) |
 | /home/pi/readtemp/index.html | FTP-uploaded page for individual.utoronto.ca |
 
@@ -85,4 +85,4 @@ Log file format:
 2026/06/14 08:05:01,24.62
 ```
 
-Logs are rotated by logrotate (`.log.1`, `.log.2`, etc.). Older rotations are in `Archive/`.
+Logs are rotated by logrotate. `temperature.log` rotations get dated names (`temperature.log-YYYYMMDD`) and are kept forever; script logs use `.log.1`, `.log.2.gz`, etc. Rotated files are in `~/readtemp/rotated/`.

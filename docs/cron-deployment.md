@@ -13,6 +13,9 @@
 
 # Daily
 0 7 * * *   sendEmailAndTemp-v4.py   → email with chart attachment
+
+# Weekly (Sunday 04:00) — added 2026-08-30 after a DNS outage; see incident-log.md
+0 4 * * 0   /usr/bin/sudo /sbin/reboot
 ```
 
 ---
@@ -156,12 +159,13 @@ The live data pipeline for the React dashboard. Reads the full temperature log h
 **Why GitHub Contents API instead of a direct Netlify deploy:** Pushing via the GitHub API commits only the JSON data file. Netlify's `netlify.toml` contains an ignore rule that cancels any build where `dashboard/` hasn't changed — so these 288 daily data commits trigger no Netlify builds and consume no build credits. See [Dashboard & Netlify](#dashboard--netlify) below.
 
 **What it does:**
-1. Reads and concatenates all `temperature.log*` files (current + rotated)
+1. Reads and concatenates `~/readtemp/temperature.log*` and `~/readtemp/rotated/temperature.log*` (active + rotated). `rotated/` was added 2026-11-21. Before that, the chart emptied after every rotation.
 2. Parses timestamps, removes duplicates, interpolates 85°C errors
 3. Filters to last 30 days, resamples to 1-hour averages via `pandas.resample('1h').mean()`
 4. Takes the last 720 hourly buckets
-5. Gets the current blob SHA of `data/recent_temp.json` from GitHub API (needed for updates)
-6. PUTs the new JSON content via GitHub Contents API
+5. Sets `current_temp` to the **latest raw reading** (last line of the log), not the last hourly average
+6. Gets the current blob SHA of `data/recent_temp.json` from GitHub API (needed for updates)
+7. PUTs the new JSON content via GitHub Contents API
 
 **Output format (`data/recent_temp.json`):**
 ```json
@@ -172,6 +176,8 @@ The live data pipeline for the React dashboard. Reads the full temperature log h
   "values": [21.3, 21.5, ...]
 }
 ```
+
+**Note on `current_temp` (changed 2026-11-21):** Previously `current_temp` was `values[-1]`, the average of the current *partial* hour, so it lagged the real temperature by up to ~0.25°C late in each hour whenever the room was warming or cooling. It is now the latest 2-minute reading, matching the email and utoronto page. The chart (`labels`/`values`) is still hourly averages.
 
 **Note on reading frequency:** Uses `resample('1h')` so it is insensitive to how often readings are taken. Changing `readTemp-v4.py` from 1-minute to 10-minute intervals has no effect on the dashboard output.
 
@@ -232,8 +238,8 @@ Two logrotate configs manage log files automatically. Both move rotated files to
 - **Schedule:** daily check; rotation only occurs when the file reaches 1MB
 - **At 2-minute polling:** ~25KB/day, threshold hit approximately every 40 days
 - **Compression:** none — all rotated files stay plain text CSV, directly readable by pandas, Excel, or any text editor
-- **Retention:** unlimited — `rotate 0` keeps all rotated files forever. No data is ever deleted.
-- **Rotated files:** `temperature.log.1`, `temperature.log.2`, etc. in `rotated/`
+- **Retention:** `rotate 9999` (effectively forever). **Warning:** until 2026-11-21 this was `rotate 0`, which in logrotate means keep *zero* old copies. Every rotation deleted the old data, so 2-minute readings before 2026-10-05 are gone (hourly averages from 2026-06-14 onward survive in the GitHub history of `data/recent_temp.json`).
+- **Rotated files:** `dateext` gives fixed dated names, e.g. `rotated/temperature.log-20261201`. These still match the `temperature.log*` glob.
 
 ### /etc/logrotate.d/readtemp-scripts — script logs
 
@@ -248,9 +254,8 @@ Covers: `1-createChart-v3.log`, `2-createHtmlAndUpload-v6.log`, `4-sendEmailAndT
 
 ```
 ~/readtemp/rotated/
-  temperature.log.1          ← most recent data rotation, plain text
-  temperature.log.2          ← older rotations, kept forever
-  temperature.log.3
+  temperature.log-20261201   ← data rotation (dated name), plain text, kept forever
+  temperature.log-20270125   ← later rotations, kept forever
   ...
   1-createChart-v3.log.1     ← last week, uncompressed
   1-createChart-v3.log.2.gz  ← older weeks, compressed
