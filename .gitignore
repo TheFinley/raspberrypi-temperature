@@ -9,6 +9,9 @@
 tempurature.png
 cputempurature.png
 
+# Private Pi-only docs (security details; repo is public)
+docs/incident-log.md
+
 # Pi archive
 Archive/
 python2_scripts/
